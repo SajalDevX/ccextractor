@@ -964,6 +964,26 @@ static int is_multi_page_mode(void)
  * into the context fields before a packet for that page is handled. Single
  * page mode never touches page_states[] and behaves as before.
  */
+// The G0 character set is global and changes with every page header, but a page's
+// text is only converted to UCS-2 when that page is flushed. Keep the set each page
+// was received with, so its text is not converted with another page's national subset.
+static void telx_save_charset(teletext_page_state_t *s)
+{
+	s->g0_default = (uint8_t)default_g0_charset;
+	s->g0_current = primary_charset.current;
+	s->g0_m29 = primary_charset.g0_m29;
+	s->g0_x28 = primary_charset.g0_x28;
+}
+
+static void telx_load_charset(const teletext_page_state_t *s)
+{
+	default_g0_charset = (g0_charsets_type)s->g0_default;
+	primary_charset.g0_m29 = s->g0_m29;
+	primary_charset.g0_x28 = s->g0_x28;
+	if (default_g0_charset == LATIN)
+		remap_g0_charset(s->g0_current);
+}
+
 static void telx_save_page_state(struct TeletextCtx *ctx)
 {
 	teletext_page_state_t *s;
@@ -988,6 +1008,7 @@ static void telx_save_page_state(struct TeletextCtx *ctx)
 	s->prev_hide_timestamp = ctx->prev_hide_timestamp;
 	s->prev_show_timestamp = ctx->prev_show_timestamp;
 	s->receiving_data = ctx->receiving_data;
+	telx_save_charset(s);
 }
 
 static void telx_load_page_state(struct TeletextCtx *ctx, int idx)
@@ -1010,6 +1031,7 @@ static void telx_load_page_state(struct TeletextCtx *ctx, int idx)
 	ctx->prev_hide_timestamp = s->prev_hide_timestamp;
 	ctx->prev_show_timestamp = s->prev_show_timestamp;
 	ctx->receiving_data = s->receiving_data;
+	telx_load_charset(s);
 
 	ctx->current_page_idx = idx;
 	tlt_config.page = s->page_number;
@@ -1042,6 +1064,7 @@ static int telx_page_slot(struct TeletextCtx *ctx, uint16_t page_number)
 	int idx = ctx->num_active_pages++;
 	memset(&ctx->page_states[idx], 0, sizeof(teletext_page_state_t));
 	ctx->page_states[idx].page_number = page_number;
+	telx_save_charset(&ctx->page_states[idx]);
 	return idx;
 }
 
